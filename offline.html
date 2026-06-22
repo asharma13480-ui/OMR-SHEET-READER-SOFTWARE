@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#008000">
+  <title>Offline — OMR Sheet Reader</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: #f0f7f0;
+      color: #1a1a1a;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    .container {
+      max-width: 420px;
+      width: 100%;
+    }
+
+    .logo {
+      width: 80px;
+      height: 80px;
+      border-radius: 1rem;
+      box-shadow: 0 4px 24px rgba(0, 128, 0, 0.18);
+      margin-bottom: 1.75rem;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: #fff3f3;
+      color: #dc2626;
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 0.35rem 0.85rem;
+      border-radius: 9999px;
+      margin-bottom: 1.25rem;
+      border: 1px solid #fecaca;
+    }
+
+    .badge .dot {
+      width: 8px;
+      height: 8px;
+      background: #dc2626;
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.85); }
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #008000;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.01em;
+    }
+
+    .subtitle {
+      font-size: 1rem;
+      color: #4b5563;
+      margin-bottom: 1.75rem;
+      line-height: 1.6;
+    }
+
+    .instructions {
+      background: #ffffff;
+      border: 1px solid #e5e7eb;
+      border-radius: 0.75rem;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.75rem;
+      text-align: left;
+    }
+
+    .instructions h2 {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #6b7280;
+      margin-bottom: 0.75rem;
+    }
+
+    .instructions ul {
+      list-style: none;
+      padding: 0;
+    }
+
+    .instructions li {
+      position: relative;
+      padding-left: 1.5rem;
+      margin-bottom: 0.6rem;
+      font-size: 0.9rem;
+      color: #374151;
+      line-height: 1.5;
+    }
+
+    .instructions li:last-child {
+      margin-bottom: 0;
+    }
+
+    .instructions li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0.45rem;
+      width: 6px;
+      height: 6px;
+      background: #008000;
+      border-radius: 50%;
+    }
+
+    .retry-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: #008000;
+      color: #ffffff;
+      border: none;
+      border-radius: 0.5rem;
+      padding: 0.75rem 2rem;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, box-shadow 0.2s, transform 0.15s;
+      box-shadow: 0 2px 12px rgba(0, 128, 0, 0.25);
+    }
+
+    .retry-btn:hover {
+      background: #006600;
+      box-shadow: 0 4px 18px rgba(0, 128, 0, 0.35);
+      transform: translateY(-1px);
+    }
+
+    .retry-btn:active {
+      transform: translateY(0);
+    }
+
+    .retry-btn svg {
+      width: 18px;
+      height: 18px;
+      transition: transform 0.4s;
+    }
+
+    .retry-btn:hover svg {
+      transform: rotate(90deg);
+    }
+
+    .footer-text {
+      margin-top: 2rem;
+      font-size: 0.75rem;
+      color: #9ca3af;
+    }
+
+    .footer-text a {
+      color: #008000;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Logo -->
+    <img src="/logo.png" alt="OMR Sheet Reader" class="logo" onerror="this.style.display='none'">
+
+    <!-- Offline badge -->
+    <div class="badge">
+      <span class="dot"></span>
+      You are offline
+    </div>
+
+    <!-- Heading -->
+    <h1>Connection Lost</h1>
+    <p class="subtitle">
+      OMR Sheet Reader requires an internet connection to evaluate sheets and sync your data.
+    </p>
+
+    <!-- Instructions -->
+    <div class="instructions">
+      <h2>What to do</h2>
+      <ul>
+        <li>Check your Wi-Fi or mobile data connection</li>
+        <li>Move to an area with better signal strength</li>
+        <li>Try disabling and re-enabling your connection</li>
+        <li>Your unsaved work is preserved in local storage</li>
+      </ul>
+    </div>
+
+    <!-- Retry button -->
+    <button class="retry-btn" onclick="window.location.reload()" type="button">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="23 4 23 10 17 10"></polyline>
+        <polyline points="1 20 1 14 7 14"></polyline>
+        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+      </svg>
+      Retry Connection
+    </button>
+
+    <p class="footer-text">
+      &copy; 2025 OMR Sheet Reader &mdash; 
+    </p>
+  </div>
+
+  <script>
+    // Auto-retry when coming back online
+    window.addEventListener('online', function () {
+      window.location.reload();
+    });
+  </script>
+</body>
+</html>

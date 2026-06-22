@@ -1,0 +1,346 @@
+// DefenceTrack OMR Pro - Service Worker
+// Version: v1
+
+const CACHE_NAME = 'defencetrack-omr-v1';
+
+// App shell assets to pre-cache on install
+const STATIC_ASSETS = [
+  '/',
+  '/offline.html',
+  '/logo.png',
+  '/logo.svg',
+  '/manifest.json',
+];
+
+// Cache TTL settings (in seconds)
+const CACHE_TTL = {
+  static: 7 * 24 * 60 * 60,    // 7 days for static assets
+  api: 5 * 60,                  // 5 minutes for API stale data
+};
+
+// Routes that should always go network-first
+const NETWORK_FIRST_ROUTES = [
+  '/api/exam',
+  '/api/answer-key',
+  '/api/omr',
+  '/api/results',
+  '/api/analytics',
+  '/api/backup',
+  '/api/settings',
+  '/api/export',
+];
+
+// Routes that should always be cache-only (offline fallback)
+const CACHE_ONLY_ROUTES = [];
+
+// Install event - pre-cache app shell
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => {
+      console.log('[SW] Pre-caching app shell');
+      return cache.addAll(STATIC_ASSETS).catch((err) => {
+        console.warn('[SW] Some assets failed to pre-cache:', err);
+        // Still install even if some assets fail
+        return Promise.resolve();
+      });
+    })
+  );
+  // Activate immediately without waiting for old service worker to finish
+  self.skipWaiting();
+});
+
+// Activate event - clean up old caches
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames
+          .filter((name) => name !== CACHE_NAME && name.startsWith('defencetrack-omr-'))
+          .map((name) => {
+            console.log('[SW] Deleting old cache:', name);
+            return caches.delete(name);
+          })
+      );
+    }).then(() => {
+      // Take control of all clients immediately
+      return self.clients.claim();
+    })
+  );
+});
+
+// Utility: check if a request URL matches any of the given routes
+function matchesRoute(requestUrl, routes) {
+  return routes.some((route) => requestUrl.includes(route));
+}
+
+// Utility: determine if a request is for a static asset
+function isStaticAsset(request) {
+  const url = new URL(request.url);
+  const staticExtensions = [
+    '.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico',
+    '.woff', '.woff2', '.ttf', '.eot', '.webp', '.avif',
+    '.json', '.xml', '.webmanifest',
+  ];
+  return staticExtensions.some((ext) => url.pathname.endsWith(ext));
+}
+
+// Utility: determine if a request is for an API
+function isApiRequest(request) {
+  const url = new URL(request.url);
+  return url.pathname.startsWith('/api/');
+}
+
+// Utility: determine if a request is a navigation request (HTML page)
+function isNavigationRequest(request) {
+  return request.mode === 'navigate' ||
+    (request.method === 'GET' && request.headers.get('accept')?.includes('text/html'));
+}
+
+// Strategy: Network First
+// Try network, fall back to cache
+async function networkFirst(request) {
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const responseClone = response.clone();
+      caches.open(CACHE_NAME).then((cache) => {
+        cache.put(request, responseClone);
+      });
+    }
+    return response;
+  } catch (error) {
+    const cached = await caches.match(request);
+    if (cached) {
+      return cached;
+    }
+    // For navigation requests, return the offline fallback page
+    if (isNavigationRequest(request)) {
+      const cachedOffline = await caches.match('/offline.html');
+      if (cachedOffline) {
+        return cachedOffline;
+      }
+      const cachedIndex = await caches.match('/');
+      if (cachedIndex) {
+        return cachedIndex;
+      }
+    }
+    return new Response('Offline - No cached data available', {
+      status: 503,
+      headers: { 'Content-Type': 'text/plain' },
+    });
+  }
+}
+
+// Strategy: Cache First
+// Try cache, fall back to network and then cache the response
+async function cacheFirst(request) {
+  const cached = await caches.match(request);
+  if (cached) {
+    return cached;
+  }
+
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const responseClone = response.clone();
+      caches.open(CACHE_NAME).then((cache) => {
+        cache.put(request, responseClone);
+      });
+    }
+    return response;
+  } catch (error) {
+    // For navigation requests, return the offline fallback page
+    if (isNavigationRequest(request)) {
+      const cachedOffline = await caches.match('/offline.html');
+      if (cachedOffline) {
+        return cachedOffline;
+      }
+      const cachedIndex = await caches.match('/');
+      if (cachedIndex) {
+        return cachedIndex;
+      }
+    }
+    return new Response('Offline - Resource not available', {
+      status: 503,
+      headers: { 'Content-Type': 'text/plain' },
+    });
+  }
+}
+
+// Strategy: Stale While Revalidate
+// Return cached version immediately, then update cache in background
+async function staleWhileRevalidate(request) {
+  const cache = await caches.open(CACHE_NAME);
+  const cached = await cache.match(request);
+
+  const fetchPromise = fetch(request).then((response) => {
+    if (response.ok) {
+      cache.put(request, response.clone());
+    }
+    return response;
+  }).catch(() => cached);
+
+  return cached || fetchPromise;
+}
+
+// Main fetch event handler
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  const url = new URL(request.url);
+
+  // Skip non-GET requests (POST, PUT, DELETE go through network)
+  if (request.method !== 'GET') {
+    return;
+  }
+
+  // Skip cross-origin requests
+  if (url.origin !== self.location.origin) {
+    return;
+  }
+
+  // Strategy selection
+  if (isApiRequest(request)) {
+    // API calls: Network First (try server, fall back to cache)
+    if (matchesRoute(url.pathname, NETWORK_FIRST_ROUTES)) {
+      event.respondWith(networkFirst(request));
+    } else {
+      event.respondWith(staleWhileRevalidate(request));
+    }
+  } else if (isNavigationRequest(request)) {
+    // HTML page navigation: Network First with offline fallback to cached index
+    event.respondWith(networkFirst(request));
+  } else if (isStaticAsset(request)) {
+    // Static assets: Cache First
+    event.respondWith(cacheFirst(request));
+  } else {
+    // Everything else: Cache First
+    event.respondWith(cacheFirst(request));
+  }
+});
+
+// Handle messages from the main app
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+
+  if (event.data && event.data.type === 'CLEAR_CACHE') {
+    caches.delete(CACHE_NAME).then(() => {
+      console.log('[SW] Cache cleared by user');
+      self.clients.matchAll().then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({ type: 'CACHE_CLEARED' });
+        });
+      });
+    });
+  }
+
+  if (event.data && event.data.type === 'GET_VERSION') {
+    self.clients.matchAll().then((clients) => {
+      clients.forEach((client) => {
+        client.postMessage({ type: 'VERSION', version: CACHE_NAME });
+      });
+    });
+  }
+});
+
+// Background Sync: Handle offline form submissions
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-form-submissions') {
+    console.log('[SW] Processing background sync for form submissions');
+    event.waitUntil(processPendingSubmissions());
+  }
+
+  if (event.tag.startsWith('sync-omr-')) {
+    console.log('[SW] Processing background sync for OMR upload:', event.tag);
+    event.waitUntil(processPendingOmrUpload(event.tag));
+  }
+});
+
+// Process pending form submissions stored in IndexedDB
+async function processPendingSubmissions() {
+  // Attempt to replay any POST/PUT requests that were queued while offline
+  // This relies on the app storing pending requests in IndexedDB
+  try {
+    const db = await openSyncDB();
+    const tx = db.transaction('pending-requests', 'readwrite');
+    const store = tx.objectStore('pending-requests');
+    const requests = await store.getAll();
+
+    const results = await Promise.allSettled(
+      requests.map(async (entry) => {
+        try {
+          const response = await fetch(entry.url, {
+            method: entry.method,
+            headers: entry.headers,
+            body: entry.body,
+          });
+          if (response.ok) {
+            // Remove successfully synced entry
+            const deleteTx = db.transaction('pending-requests', 'readwrite');
+            deleteTx.objectStore('pending-requests').delete(entry.id);
+          }
+          return response;
+        } catch {
+          return null;
+        }
+      })
+    );
+
+    const succeeded = results.filter((r) => r.status === 'fulfilled' && r.value !== null).length;
+    if (succeeded > 0) {
+      console.log('[SW] Background sync completed:', succeeded, 'requests synced');
+      // Notify the app that sync is complete
+      self.clients.matchAll().then((clients) => {
+        clients.forEach((client) => {
+          client.postMessage({ type: 'SYNC_COMPLETE', count: succeeded });
+        });
+      });
+    }
+  } catch (err) {
+    console.warn('[SW] Background sync failed:', err);
+  }
+}
+
+// Process pending OMR uploads
+async function processPendingOmrUpload(tag) {
+  // Placeholder for OMR-specific upload sync logic
+  console.log('[SW] OMR upload sync triggered for tag:', tag);
+}
+
+// Open IndexedDB for storing pending sync requests
+function openSyncDB() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('defencetrack-sync', 1);
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains('pending-requests')) {
+        db.createObjectStore('pending-requests', { keyPath: 'id', autoIncrement: true });
+      }
+    };
+    request.onsuccess = (event) => resolve(event.target.result);
+    request.onerror = (event) => reject(event.target.error);
+  });
+}
+
+// Handle push notifications (if needed in the future)
+self.addEventListener('push', (event) => {
+  const data = event.data ? event.data.json() : { title: 'DefenceTrack OMR Pro', body: 'You have a new notification' };
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: '/logo.png',
+      badge: '/logo.png',
+      vibrate: [100, 50, 100],
+      data: data,
+    })
+  );
+});
+
+// Handle notification click
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.openWindow('/')
+  );
+});
