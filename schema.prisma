@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Exam {
+  id             String   @id @default(cuid())
+  name           String
+  subject        String?
+  date           String?
+  duration       String?
+  totalQuestions Int      @default(100)
+  totalMarks     Float    @default(100)
+  passingPercent Float    @default(33)
+  negativeMarking Float   @default(0)
+  optionsPerQ    Int      @default(4)
+  status         String   @default("active") // active, completed, archived
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  answerKeys  AnswerKey[]
+  omrSheets   OMRSheet[]
+  results     Result[]
+}
+
+model AnswerKey {
+  id            String @id @default(cuid())
+  examId        String
+  questionNo    Int
+  correctAnswer String
+  marks         Float  @default(1)
+
+  exam Exam @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  @@unique([examId, questionNo])
+}
+
+model OMRSheet {
+  id         String   @id @default(cuid())
+  examId     String
+  studentName String
+  rollNumber  String
+  className  String?
+  section    String?
+  batch      String?
+  answers    String   // JSON array: ["A","B","C","D",...]
+  filePath   String?
+  status     String   @default("pending") // pending, processed, error
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  exam    Exam    @relation(fields: [examId], references: [id], onDelete: Cascade)
+  results Result[]
+}
+
+model Result {
+  id              String   @id @default(cuid())
+  examId          String
+  omrSheetId      String
+  studentName     String
+  rollNumber      String
+  totalMarks      Float
+  obtainedMarks   Float
+  correctCount    Int
+  incorrectCount  Int
+  unansweredCount Int
+  negativeMarks   Float    @default(0)
+  percentage      Float
+  status          String   // pass, fail
+  rank            Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  exam     Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  omrSheet OMRSheet @relation(fields: [omrSheetId], references: [id], onDelete: Cascade)
+}
+
+model AppSettings {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+}
+
+model LicenseKey {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  type        String   @default("monthly") // trial, monthly, yearly, lifetime
+  status      String   @default("unused")  // unused, active, expired, revoked
+  activatedAt DateTime?
+  expiresAt   DateTime?
+  deviceInfo  String?
+  activatedBy String?
+  maxDevices  Int      @default(1)
+  createdAt   DateTime @default(now())
+}
